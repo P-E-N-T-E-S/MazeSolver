@@ -21,6 +21,9 @@ int is_valid(char** maze, int rows, int cols, int r, int c) {
 }
 
 float solve_maze(const char* input_filename, const char* output_filename) {
+
+    clock_t start_time = clock();
+
     FILE* f = fopen(input_filename, "r");
     if (!f) {
         perror("Erro ao abrir o arquivo de entrada");
@@ -46,8 +49,6 @@ float solve_maze(const char* input_filename, const char* output_filename) {
             if (maze[i][j] == 'S') start = (Point){i, j};
             if (maze[i][j] == 'E') end = (Point){i, j};
         }
-
-    clock_t start_time = clock();
 
     Node** queue = malloc(sizeof(Node*) * MAX * MAX);
     int front = 0, rear = 0;
@@ -96,9 +97,6 @@ float solve_maze(const char* input_filename, const char* output_filename) {
         p = p->parent;
     }
 
-    clock_t end_time = clock();
-    float duration_ms = ((float)(end_time - start_time) / CLOCKS_PER_SEC) * 1000;
-
     FILE* out = fopen(output_filename, "w");
     if (!out) {
         perror("Erro ao escrever o arquivo de saída");
@@ -114,6 +112,10 @@ float solve_maze(const char* input_filename, const char* output_filename) {
     fclose(out);
     free(visited);
     free(queue);
+
+    clock_t end_time = clock();
+    float duration_ms = ((float)(end_time - start_time) / CLOCKS_PER_SEC) * 1000;
+
     return duration_ms;
 }
 
