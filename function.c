@@ -2,9 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <dirent.h>
+#include "function.h"
 
-#define MAX 1024
+#define MAX 2048
 
 typedef struct {
     int row, col;
@@ -20,42 +20,61 @@ int is_valid(char** maze, int rows, int cols, int r, int c) {
             (maze[r][c] == ' ' || maze[r][c] == 'E'));
 }
 
-float solve_maze(const char* input_filename, const char* output_filename) {
+float solve_maze(const char* maze_str, const char* output_filename) {
+    char* maze[MAX];
+    int rows = 0;
+    char* str_copy = strdup(maze_str);
 
-    clock_t start_time = clock();
+    char *src = str_copy, *dst = str_copy;
+    while (*src) {
+        if (src[0] == '\\' && src[1] == 'n') {
+            *dst++ = '\n';
+            src += 2;
+        } else {
+            *dst++ = *src++;
+        }
+    }
+    *dst = '\0';
 
-    FILE* f = fopen(input_filename, "r");
-    if (!f) {
-        perror("Erro ao abrir o arquivo de entrada");
+    char* line = strtok(str_copy, "\n");
+    while (line && rows < MAX) {
+        maze[rows++] = strdup(line);
+        line = strtok(NULL, "\n");
+    }
+
+    int cols = strlen(maze[0]);
+
+    Point start, end;
+    int start_found = 0, end_found = 0;
+
+    for (int i = 0; i < rows; i++)
+        for (int j = 0; j < cols; j++) {
+            if (maze[i][j] == 'S') {
+                start = (Point){i, j};
+                start_found = 1;
+            }
+            if (maze[i][j] == 'E') {
+                end = (Point){i, j};
+                end_found = 1;
+            }
+        }
+
+    if (!start_found || !end_found) {
+        fprintf(stderr, "Labirinto deve conter exatamente um 'S' e um 'E'\n");
+        free(str_copy);
+        for (int i = 0; i < rows; i++) free(maze[i]);
         return -1;
     }
 
-    char* maze[MAX];
-    int rows = 0;
+    clock_t start_time = clock();
 
-    char buffer[2048];
-    while (fgets(buffer, sizeof(buffer), f)) {
-        maze[rows] = strdup(buffer);
-        rows++;
-    }
-    fclose(f);
-
-
-    int cols = strlen(maze[0]) - 1;
-
-    Point start, end;
-    for (int i = 0; i < rows; i++)
-        for (int j = 0; j < cols; j++) {
-            if (maze[i][j] == 'S') start = (Point){i, j};
-            if (maze[i][j] == 'E') end = (Point){i, j};
-        }
-
-    Node** queue = malloc(sizeof(Node*) * MAX * MAX);
-    int front = 0, rear = 0;
-    int** visited = malloc(sizeof(int*) * rows);
+    int** visited = calloc(rows, sizeof(int*));
     for (int i = 0; i < rows; i++) {
         visited[i] = calloc(cols, sizeof(int));
     }
+
+    Node** queue = malloc(sizeof(Node*) * rows * cols);
+    int front = 0, rear = 0;
 
     Node* start_node = malloc(sizeof(Node));
     start_node->pt = start;
@@ -69,8 +88,7 @@ float solve_maze(const char* input_filename, const char* output_filename) {
 
     while (front < rear) {
         Node* curr = queue[front++];
-        int r = curr->pt.row;
-        int c = curr->pt.col;
+        int r = curr->pt.row, c = curr->pt.col;
 
         if (r == end.row && c == end.col) {
             end_node = curr;
@@ -78,8 +96,7 @@ float solve_maze(const char* input_filename, const char* output_filename) {
         }
 
         for (int d = 0; d < 4; d++) {
-            int nr = r + dr[d];
-            int nc = c + dc[d];
+            int nr = r + dr[d], nc = c + dc[d];
             if (is_valid(maze, rows, cols, nr, nc) && !visited[nr][nc]) {
                 visited[nr][nc] = 1;
                 Node* next = malloc(sizeof(Node));
@@ -97,49 +114,29 @@ float solve_maze(const char* input_filename, const char* output_filename) {
         p = p->parent;
     }
 
-    FILE* out = fopen(output_filename, "w");
-    if (!out) {
-        perror("Erro ao escrever o arquivo de saída");
-        return -1;
-    }
-
-    for (int i = 0; i < rows; i++) {
-        fputs(maze[i], out);
-        free(maze[i]);
-        free(visited[i]);
-    }
-
-    fclose(out);
-    free(visited);
+    for (int i = 0; i < rear; i++) free(queue[i]);
     free(queue);
+
+    for (int i = 0; i < rows; i++) free(visited[i]);
+    free(visited);
 
     clock_t end_time = clock();
     float duration_ms = ((float)(end_time - start_time) / CLOCKS_PER_SEC) * 1000;
 
+    FILE* out = fopen(output_filename, "w");
+    if (!out) {
+        perror("Erro ao escrever o arquivo de saída");
+        for (int i = 0; i < rows; i++) free(maze[i]);
+        free(str_copy);
+        return -1;
+    }
+
+    for (int i = 0; i < rows; i++) {
+        fprintf(out, "%s\n", maze[i]);
+        free(maze[i]);
+    }
+
+    fclose(out);
+    free(str_copy);
     return duration_ms;
-}
-
-void process_all_mazes(const char* input_folder, const char* output_folder) {
-    DIR* dir = opendir(input_folder);
-    if (!dir) {
-        perror("Erro ao abrir a pasta de entrada");
-        return;
-    }
-
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != NULL) {
-        if (strstr(entry->d_name, ".txt")) {
-            char input_path[512], output_path[512];
-            snprintf(input_path, sizeof(input_path), "%s/%s", input_folder, entry->d_name);
-            snprintf(output_path, sizeof(output_path), "%s/solved_%s", output_folder, entry->d_name);
-
-            printf("Resolvendo %s...\n", entry->d_name);
-            float time = solve_maze(input_path, output_path);
-            if (time >= 0) {
-                printf("Resolvido em %.2f ms ", time);
-            }
-        }
-    }
-
-    closedir(dir);
 }
